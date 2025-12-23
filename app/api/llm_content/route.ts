@@ -1,4 +1,4 @@
-// /app/api/llm_content/route.ts 
+// /app/api/llm_content/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamObject } from 'ai';
@@ -9,7 +9,7 @@ export const maxDuration = 100;
 export async function POST(req: NextRequest) {
   try {
     const { subpages, mainpage, linkedinData, websiteurl } = await req.json();
-    
+
     if (!subpages || !mainpage) {
       return NextResponse.json({ error: 'Mainpage or subpage content is required' }, { status: 400 });
     }
@@ -18,32 +18,52 @@ export async function POST(req: NextRequest) {
     const mainpageText = JSON.stringify(mainpage, null, 2);
     const linkedinText = linkedinData ? JSON.stringify(linkedinData, null, 2) : null;
 
-    // Define the comprehensive website roasting schema
-    const websiteRoastSchema = z.object({
-      roast: z.array(z.string()).length(5),
-      strengths: z.array(z.string()).length(5),
-      joke: z.string(),
-      competitor: z.object({
-        name: z.string(),
-        comparison: z.string()
+    // Website grading schema
+    const websiteGradeSchema = z.object({
+      overall_score: z.number().min(0).max(100),
+      grade_letter: z.enum(['A+', 'A', 'B', 'C', 'D', 'F']),
+      summary: z.string(),
+
+      categories: z.object({
+        performance: z.object({
+          score: z.number().min(0).max(100),
+          findings: z.array(z.string()).length(3),
+          recommendation: z.string()
+        }),
+        mobile: z.object({
+          score: z.number().min(0).max(100),
+          findings: z.array(z.string()).length(3),
+          recommendation: z.string()
+        }),
+        seo: z.object({
+          score: z.number().min(0).max(100),
+          findings: z.array(z.string()).length(3),
+          recommendation: z.string()
+        }),
+        content: z.object({
+          score: z.number().min(0).max(100),
+          findings: z.array(z.string()).length(3),
+          recommendation: z.string()
+        })
       }),
-      human_form: z.string(),
-      money: z.string(),
-      cringy_content: z.array(z.string()).length(3),
-      improvements: z.array(z.string()).length(3),
-      overused_words: z.array(z.object({
-        word: z.string(),
-        emoji: z.string()
-      })).length(3)
+
+      top_improvements: z.array(z.object({
+        priority: z.enum(['high', 'medium', 'low']),
+        title: z.string(),
+        description: z.string(),
+        impact: z.string()
+      })).length(5),
+
+      upgrade_prompt: z.string()
     });
 
-    const prompt = `You are a website critic who gives honest feedback. Analyze this website and provide feedback in these exact sections:
+    const prompt = `You are a professional website auditor. Analyze this website and provide a comprehensive grade with actionable improvements.
 
 WEBSITE URL: ${websiteurl}
 
 ${linkedinText ? `LINKEDIN PROFILE:
-  ${linkedinText}
-  ` : ''}
+${linkedinText}
+` : ''}
 
 SUBPAGES CONTENT:
 ${subpagesText}
@@ -51,58 +71,83 @@ ${subpagesText}
 WEBSITE CONTENT:
 ${mainpageText}
 
+Provide a professional website audit with these sections:
 
-Provide feedback in these sections only:
+📊 OVERALL SCORE (0-100)
+Grade the website overall from 0-100. Use this scale:
+- 90-100: A+ (Exceptional - industry-leading website)
+- 80-89: A (Excellent - well-optimized, minor improvements possible)
+- 70-79: B (Good - solid foundation, room for improvement)
+- 60-69: C (Average - notable issues that need attention)
+- 50-59: D (Below Average - significant problems)
+- 0-49: F (Poor - major overhaul needed)
 
-🔥 ROAST (5 points)
-Give 5 brutal but specific roast points about this website. Make 5 friendly jokes on them. Keep it fun and unique. Talk like a brutal friend.
+📝 SUMMARY
+Write a 2-3 sentence executive summary of the website's strengths and main areas for improvement.
 
-💪 STRENGTHS (5 points) 
-Give 5 strengths in "heading: subheading" format. Give 5 things they're great at. Hype them up.
+🚀 PERFORMANCE (Score 0-100)
+Evaluate based on:
+- Page structure and organization
+- Code cleanliness (based on content structure)
+- Image optimization indicators
+- Content loading patterns
+Give 3 specific findings and 1 key recommendation.
 
-😂 JOKE
-Write a very witty joke.
+📱 MOBILE (Score 0-100)
+Evaluate based on:
+- Content readability indicators
+- Navigation structure simplicity
+- Touch-friendly element patterns
+- Responsive design indicators
+Give 3 specific findings and 1 key recommendation.
 
-🏆 COMPETITOR
-Pick some competitors/alternatives and praise the current website more than the competitor(s). Keep this very positive.
+🔍 SEO (Score 0-100)
+Evaluate based on:
+- Title and heading structure
+- Meta description quality
+- Content keyword usage
+- URL structure
+- Internal linking
+Give 3 specific findings and 1 key recommendation.
 
-👤 HUMAN FORM
-If this company was a human, who would it be? Format: "If this company was a human, it would be <famous person> because <reason>" (keep positive). This should be very unique.
+✍️ CONTENT (Score 0-100)
+Evaluate based on:
+- Clarity of messaging
+- Value proposition strength
+- Call-to-action effectiveness
+- Content quality and depth
+- Brand consistency
+Give 3 specific findings and 1 key recommendation.
 
-💰 MONEY (1-2 lines)
-Something like: "Very high chance this becomes a billion dollar company because <add praise>"
+🎯 TOP 5 IMPROVEMENTS
+List the 5 most impactful improvements with:
+- Priority level (high/medium/low)
+- Clear title
+- Specific description of what to do
+- Expected impact
 
-🤡 CRINGY CONTENT (3 moments)
-Find exactly 3 cringy moments from their content. Format each as: "Cringy content..." followed by why it's cringy in a few words.
+🔧 UPGRADE PROMPT
+Write a detailed prompt that could be given to an AI assistant (like Claude or ChatGPT) to help implement the improvements. The prompt should:
+- Reference the specific website URL
+- Include the top issues found
+- Request specific code changes or content improvements
+- Be ready to copy and paste into an AI coding assistant
 
-🛠️ IMPROVEMENTS (3 simple recommendations)
-Give 3 simple, positive, actually useful improvements.
-
-📝 OVERUSED WORDS (top 3)
-Find the top 3 most overused words on their website with emojis.
-
-Make it feel personal - like you really read their website in depth and get who they are!
+Format example:
+"I need help upgrading my website [URL]. Based on an audit, here are the issues to fix: [issues]. Please help me: 1) [specific task] 2) [specific task] 3) [specific task]. Focus on [priority area] first."
 
 RULES:
-- Use simple words and simple English
-- Keep sentences short and to the point
-- One line answers are okay
-- Don't repeat points between sections
-- Be specific to their actual website content
-- Make it feel human, not AI-generated
-- Write like you're chatting to a friend
-- Keep it in casual tone, strictly no formal language
-- You can use references to their website content in the answers (don't use the same reference again and again)
-- Write in second person using "you"
-- You should have strong opinions and be slightly polarizing answers.
-- Keep sentences short and simple
-- Use simple words`;
+- Be professional and constructive, not sarcastic
+- Provide specific, actionable feedback
+- Base scores on actual website content analysis
+- Make the upgrade prompt immediately usable
+- Keep findings concise but specific`;
 
     try {
       const { partialObjectStream } = streamObject({
         model: anthropic('claude-sonnet-4-20250514'),
-        schema: websiteRoastSchema,
-        system: "You are a website critic who gives honest feedback. Use simple words and simple English. Keep sentences short and to the point. Don't repeat points between sections. Make sure each section is unique and specific to their website content.",
+        schema: websiteGradeSchema,
+        system: "You are a professional website auditor who provides constructive, actionable feedback. Score fairly based on actual evidence from the website content. Be specific and helpful.",
         prompt: prompt,
         providerOptions: {
           anthropic: {
@@ -137,8 +182,8 @@ RULES:
       if (error instanceof Error && 'status' in error && error.status === 429) {
         const { partialObjectStream } = streamObject({
           model: anthropic('claude-3-7-sonnet-20250219'),
-          schema: websiteRoastSchema,
-          system: "You are a website critic who gives honest feedback. Use simple words and simple English. Keep sentences short and to the point. Don't repeat points between sections. Make sure each section is unique and specific to their website content.",
+          schema: websiteGradeSchema,
+          system: "You are a professional website auditor who provides constructive, actionable feedback. Score fairly based on actual evidence from the website content. Be specific and helpful.",
           prompt: prompt,
           providerOptions: {
             anthropic: {
@@ -169,12 +214,12 @@ RULES:
         });
       }
 
-      console.error('Website Roast API error:', error);
-      return NextResponse.json({ error: `Website Roast API Failed | ${error}` }, { status: 500 });
+      console.error('Website Grade API error:', error);
+      return NextResponse.json({ error: `Website Grade API Failed | ${error}` }, { status: 500 });
     }
 
   } catch (error) {
-    console.error('Company summary API error:', error);
-    return NextResponse.json({ error: `Company summary API Failed | ${error}` }, { status: 500 });
+    console.error('Website grade API error:', error);
+    return NextResponse.json({ error: `Website grade API Failed | ${error}` }, { status: 500 });
   }
 }
